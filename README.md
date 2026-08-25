@@ -1,86 +1,83 @@
-# Dynamic_sql_examples
+# junctions
 
-This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
+A DuckDB extension for **configurable road-junction polygonisation and clustering**.
 
----
+`junctions` turns a table of road centreline geometries into junction-system polygons using a transparent SQL algorithm:
 
-This extension, Dynamic_sql_examples, allow you to ... <extension_goal>.
+1. extract line endpoints;
+2. retain coincident endpoints with at least `min_arms` incident links;
+3. assign a configurable buffer per road function;
+4. buffer and dissolve touching nodes;
+5. split dissolved systems, take a convex hull, and calculate statistics;
+6. return a stable junction ID, geometry, area, centroid, node count, and arm count.
 
+The extension intentionally delegates geometry operations to DuckDB's battle-tested `spatial` extension. It owns the road-junction policy and configuration, not another implementation of GEOS.
 
-## Building
-### Managing dependencies
-DuckDB extensions uses VCPKG for dependency management. Enabling VCPKG is very simple: follow the [installation instructions](https://vcpkg.io/en/getting-started) or just run the following:
-```shell
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-export VCPKG_TOOLCHAIN_PATH=`pwd`/vcpkg/scripts/buildsystems/vcpkg.cmake
-```
-Note: VCPKG is only required for extensions that want to rely on it for dependency management. If you want to develop an extension without dependencies, or want to do your own dependency management, just skip this step. Note that the example extension uses VCPKG to build with a dependency for instructive purposes, so when skipping this step the build may not work without removing the dependency.
+## Status
 
-### Build steps
-Now to build the extension, run:
-```sh
-make
-```
-The main binaries that will be built are:
-```sh
-./build/release/duckdb
-./build/release/test/unittest
-./build/release/extension/dynamic_sql_examples/dynamic_sql_examples.duckdb_extension
-```
-- `duckdb` is the binary for the duckdb shell with the extension code automatically loaded.
-- `unittest` is the test runner of duckdb. Again, the extension is already linked into the binary.
-- `dynamic_sql_examples.duckdb_extension` is the loadable binary as it would be distributed.
+This is an initial, SQL-only DuckDB extension extracted from the OpenRoads junction workflow in `Robinlovelace/criticalissues`. It currently expects British National Grid input (`geom_bng` in EPSG:27700) and a `road_function` column with OS OpenRoads values.
 
-## Running the extension
-To run the extension code, simply start the shell with `./build/release/duckdb`.
+## Install and use
 
-Now we can use the features from the extension directly in DuckDB. The template contains a single scalar function `dynamic_sql_examples()` that takes a string arguments and returns a string:
-```
-D select dynamic_sql_examples('Jane') as result;
-┌───────────────┐
-│    result     │
-│    varchar    │
-├───────────────┤
-│ Dynamic_sql_examples Jane 🐥 │
-└───────────────┘
-```
+Until the extension is accepted into DuckDB Community Extensions, build it locally and load the resulting `.duckdb_extension` file. Once published, the intended interface is:
 
-## Running the tests
-Different tests can be created for DuckDB extensions. The primary way of testing DuckDB extensions should be the SQL tests in `./test/sql`. These SQL tests can be run using:
-```sh
-make test
-```
-
-### Installing the deployed binaries
-To install your extension binaries from S3, you will need to do two things. Firstly, DuckDB should be launched with the
-`allow_unsigned_extensions` option set to true. How to set this will depend on the client you're using. Some examples:
-
-CLI:
-```shell
-duckdb -unsigned
-```
-
-Python:
-```python
-con = duckdb.connect(':memory:', config={'allow_unsigned_extensions' : 'true'})
-```
-
-NodeJS:
-```js
-db = new duckdb.Database(':memory:', {"allow_unsigned_extensions": "true"});
-```
-
-Secondly, you will need to set the repository endpoint in DuckDB to the HTTP url of your bucket + version of the extension
-you want to install. To do this run the following SQL query in DuckDB:
 ```sql
-SET custom_extension_repository='bucket.s3.eu-west-1.amazonaws.com/<your_extension_name>/latest';
+INSTALL spatial;
+LOAD spatial;
+INSTALL junctions FROM community;
+LOAD junctions;
 ```
-Note that the `/latest` path will allow you to install the latest extension version available for your current version of
-DuckDB. To specify a specific version, you can pass the version instead.
 
-After running these steps, you can install and load your extension using the regular INSTALL/LOAD commands in DuckDB:
 ```sql
-INSTALL dynamic_sql_examples
-LOAD dynamic_sql_examples
+FROM junctions_cluster(
+  'road_links',
+  motorway_buffer := 20.0,
+  a_road_buffer := 15.0,
+  b_road_buffer := 10.0,
+  minor_road_buffer := 10.0,
+  default_buffer := 5.0,
+  min_arms := 2,
+  output_crs := 'EPSG:4326'
+);
 ```
+
+### Input contract
+
+The named input table/view must have:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `geom_bng` | `GEOMETRY` | Road centreline in EPSG:27700 |
+| `road_function` | `VARCHAR` | OS OpenRoads road function |
+
+### Output contract
+
+| Column | Meaning |
+|---|---|
+| `junction_id` | Deterministic ID for the current input/configuration |
+| `num_nodes` | Number of coincident endpoint nodes in the system |
+| `num_arms` | Sum of endpoint degrees; see limitations below |
+| `area_sqm` | Area of the BNG convex-hull polygon |
+| `centroid_x`, `centroid_y` | BNG centroid coordinates |
+| `geom` | Convex-hull polygon transformed to `output_crs` |
+
+## Current limitations
+
+- `num_arms` deliberately preserves the legacy endpoint-degree sum. It can over-count arms at traffic islands, dual carriageways and slip roads. A forthcoming external-link/cluster-boundary method should replace it.
+- Grade separation is not yet represented; bridges and tunnels need upstream filtering or a future level-aware policy.
+- The public first version is BNG/OS OpenRoads-specific to permit an exact, tested cutover. General CRS and input-schema mapping are planned once the contract is stable.
+
+## Development
+
+This repository uses DuckDB's [SQL extension template](https://github.com/duckdb/extension-template-sql).
+
+```sh
+make release
+python test/test_integration.py
+```
+
+The integration test loads the actual locally built extension into DuckDB 1.5, loads `spatial`, and covers clustering, emitted polygon type, endpoint/arm statistics, and configurable buffer rules.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
