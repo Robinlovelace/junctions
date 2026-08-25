@@ -109,6 +109,49 @@ FROM junctions_from_osm(
 );
 ```
 
+## Reproducible case study: ITS, Leeds
+
+`examples/its_leeds.py` is a single, self-contained script that reproduces the figure below. It:
+
+1. builds a 200 m circle around the Institute for Transport Studies (53.8081° N, 1.5585° W) with DuckDB Spatial;
+2. downloads OpenStreetMap roads inside it from a Geofabrik West Yorkshire extract with QuackOSM;
+3. merges them into junction polygons with `junctions_from_osm` (the centroid is in the UK, so `analysis_crs` resolves to EPSG:27700 automatically); and
+4. renders raw roads and merged junctions to `docs/figures/its-leeds-junctions.png`.
+
+![Raw OSM roads and merged junctions around ITS, University of Leeds](docs/figures/its-leeds-junctions.png)
+
+```bash
+make release
+python examples/its_leeds.py
+```
+
+The script needs `duckdb`, `quackosm`, `shapely`, and `matplotlib`. The extension load is the only junctions-specific step; everything else is standard QuackOSM and DuckDB Spatial:
+
+```python
+import quackosm as qosm
+import duckdb
+
+# 200 m buffer around ITS, projected to WGS84 for QuackOSM
+con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
+con.execute("INSTALL spatial; LOAD spatial")
+con.execute("LOAD 'build/release/extension/junctions/junctions.duckdb_extension'")
+
+qosm.convert_pbf_to_duckdb(
+    "west-yorkshire-latest.osm.pbf",
+    result_file_path="its_osm.duckdb",
+    duckdb_table_name="quackosm",
+    tags_filter={"highway": True},
+    keep_all_tags=True,
+    explode_tags=False,
+    geometry_filter=buffer_wgs84,  # the 200 m circle
+)
+
+con.execute("ATTACH 'its_osm.duckdb' AS osm (READ_ONLY)")
+junctions = con.execute(
+    "SELECT * FROM junctions_from_osm('osm.quackosm')"
+).fetchall()
+```
+
 ## OpenRoads example
 
 `junctions_cluster` preserves the existing OS OpenRoads contract: road links must already be split at their junction endpoints.
