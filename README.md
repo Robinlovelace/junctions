@@ -54,7 +54,6 @@ COPY (
   SELECT *
   FROM junctions_from_osm(
     'osm.quackosm',
-    analysis_crs := 'EPSG:27700',  -- metres: British National Grid
     output_crs := 'EPSG:4326'
   )
 ) TO 'junctions.parquet' (FORMAT PARQUET);
@@ -68,7 +67,20 @@ COPY (
 | `tags` | `MAP(VARCHAR, VARCHAR)` | Must include `highway`; `bridge`, `tunnel`, and `layer` are used when available |
 | `geometry` | `GEOMETRY` | QuackOSM WGS84 road geometry |
 
-The macro projects from WGS84 into the requested `analysis_crs` before any distance or area operation. Choose a local projected CRS in metres; `EPSG:27700` is appropriate for Great Britain.
+### Automatic analysis CRS
+
+`analysis_crs` defaults to `auto`, which selects a metre-based CRS from the centroid of the WGS84 bounding box of the case-study road data:
+
+- centroid within the UK bounding box (`-8.75…1.96°`, `49.75…60.95°`) → **EPSG:27700** (British National Grid);
+- otherwise → the centroid's UTM zone (`EPSG:326xx` north of the equator, `EPSG:327xx` south).
+
+The selected value is returned in the `analysis_crs` output column. Override it for cross-zone, polar, or otherwise specialised studies:
+
+```sql
+FROM junctions_from_osm('osm.quackosm', analysis_crs := 'EPSG:3035');
+```
+
+Projection occurs before every distance and area operation.
 
 ### OSM topology and grade separation
 
@@ -122,6 +134,7 @@ Required columns are `geom_bng GEOMETRY` (EPSG:27700) and `road_function VARCHAR
 |---|---|
 | `junction_id` | Deterministic ID for the current input/configuration; it intentionally does not preserve legacy GeoPandas IDs |
 | `level_key` | OSM adapter only: vertical road level used for the cluster |
+| `analysis_crs` | OSM adapter only: selected or user-supplied CRS used for topology, buffers, and area |
 | `num_nodes` | Number of junction nodes in the system |
 | `num_arms` | Sum of node degrees; see limitations |
 | `area_sqm` | Convex-hull area in the analysis CRS |
