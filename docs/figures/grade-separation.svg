@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="310" viewBox="0 0 900 310" role="img" aria-labelledby="title desc">
+  <title id="title">Topology and grade-separation policy</title>
+  <desc id="desc">At-grade roads are noded at their intersection and form a junction polygon. A bridge at a different level is kept separate.</desc>
+  <style>text{font-family:system-ui,sans-serif;fill:#17212b}.h{font-size:18px;font-weight:700}.s{font-size:14px;fill:#425466}.road{stroke-linecap:round;stroke-width:15;fill:none}.node{fill:#ef8354;stroke:#fff;stroke-width:3}.poly{fill:#f6bd6038;stroke:#d79718;stroke-width:2;stroke-dasharray:5 4}</style>
+  <rect width="900" height="310" fill="#f7fafc"/>
+  <text class="h" x="215" y="35" text-anchor="middle">At grade: node and polygon</text><text class="s" x="215" y="58" text-anchor="middle">same level_key = 0</text>
+  <path class="road" d="M55 155 H375" stroke="#356e8a"/><path class="road" d="M215 92 V218" stroke="#5e9e6f"/><circle class="node" cx="215" cy="155" r="10"/><circle class="poly" cx="215" cy="155" r="58"/><text class="s" x="215" y="270" text-anchor="middle">ST_Node finds an interior crossing</text>
+  <line x1="450" y1="26" x2="450" y2="283" stroke="#d0d9df" stroke-width="2"/>
+  <text class="h" x="675" y="35" text-anchor="middle">Grade separated: no merge</text><text class="s" x="675" y="58" text-anchor="middle">bridge → level_key = 1</text>
+  <path class="road" d="M505 155 H845" stroke="#356e8a"/><path class="road" d="M675 92 V218" stroke="#8b6fb4"/><path d="M652 155 H698" stroke="#fff" stroke-width="20"/><path class="road" d="M652 155 H698" stroke="#8b6fb4"/><text class="s" x="675" y="270" text-anchor="middle">Buffers and noding stay within a level</text>
+</svg>

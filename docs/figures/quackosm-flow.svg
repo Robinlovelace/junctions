@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="250" viewBox="0 0 900 250" role="img" aria-labelledby="title desc">
+  <title id="title">QuackOSM to junction polygons workflow</title>
+  <desc id="desc">OpenStreetMap PBF is loaded by QuackOSM, then the junctions extension derives topology and produces polygons.</desc>
+  <style>text{font-family:system-ui,sans-serif;fill:#17212b}.box{stroke:#2b5876;stroke-width:2;rx:12}.label{font-size:19px;font-weight:700}.small{font-size:14px;fill:#425466}.arrow{stroke:#4b778d;stroke-width:3;fill:none;marker-end:url(#a)}</style>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#4b778d"/></marker></defs>
+  <rect width="900" height="250" fill="#f7fafc"/>
+  <rect class="box" x="30" y="74" width="180" height="100" fill="#e6f3f8"/><text class="label" x="120" y="112" text-anchor="middle">OSM PBF</text><text class="small" x="120" y="140" text-anchor="middle">highway ways + tags</text>
+  <path class="arrow" d="M215 124 H302"/>
+  <rect class="box" x="310" y="74" width="210" height="100" fill="#e9f7ee"/><text class="label" x="415" y="112" text-anchor="middle">QuackOSM</text><text class="small" x="415" y="140" text-anchor="middle">DuckDB: feature_id, tags, geometry</text>
+  <path class="arrow" d="M525 124 H612"/>
+  <rect class="box" x="620" y="47" width="250" height="155" fill="#fff3df"/><text class="label" x="745" y="84" text-anchor="middle">junctions</text><text class="small" x="745" y="111" text-anchor="middle">project → node by level</text><text class="small" x="745" y="133" text-anchor="middle">buffer → dissolve → hull</text><text class="small" x="745" y="164" text-anchor="middle">junction polygons + statistics</text>
+</svg>

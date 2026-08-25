@@ -37,6 +37,23 @@ class JunctionsExtensionTest(unittest.TestCase):
         ).fetchall()
         self.assertEqual(result, [("0", 1, 2, "POLYGON"), ("1", 1, 2, "POLYGON")])
 
+    def test_osm_adapter_nodes_interior_crossing_and_keeps_levels_separate(self):
+        self.con.execute(
+            """CREATE TABLE quackosm(feature_id VARCHAR, tags MAP(VARCHAR, VARCHAR), geometry GEOMETRY);
+            INSERT INTO quackosm VALUES
+                ('way/1', MAP {'highway': 'primary'}, ST_GeomFromText('LINESTRING (-1.5100 53.0000, -1.4900 53.0000)')),
+                ('way/2', MAP {'highway': 'residential'}, ST_GeomFromText('LINESTRING (-1.5000 52.9900, -1.5000 53.0100)')),
+                ('way/3', MAP {'highway': 'primary', 'bridge': 'yes'}, ST_GeomFromText('LINESTRING (-1.5100 53.0100, -1.4900 53.0100)'));
+            """
+        )
+        result = self.con.execute(
+            """SELECT level_key, num_nodes, num_arms, ST_GeometryType(geom)
+            FROM junctions_from_osm(
+                'quackosm', analysis_crs := 'EPSG:27700', output_crs := 'EPSG:27700'
+            )"""
+        ).fetchall()
+        self.assertEqual(result, [(0, 1, 4, 'POLYGON')])
+
     def test_buffer_configuration_changes_cluster_membership(self):
         self.con.execute(
             """CREATE TABLE nearby_links(id INTEGER, road_function VARCHAR, geom_bng GEOMETRY);
