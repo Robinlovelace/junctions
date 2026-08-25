@@ -41,6 +41,8 @@ convert_pbf_to_duckdb(
 )
 ```
 
+For a locally built extension, the artifact is unsigned. Start the DuckDB CLI with `duckdb -unsigned`, or in Python create the connection with `duckdb.connect(config={'allow_unsigned_extensions': 'true'})` before running `LOAD` (as the integration test does).
+
 ```sql
 INSTALL spatial;
 LOAD spatial;
