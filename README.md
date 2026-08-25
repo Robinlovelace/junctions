@@ -54,7 +54,7 @@ The named input table/view must have:
 
 | Column | Meaning |
 |---|---|
-| `junction_id` | Deterministic ID for the current input/configuration |
+| `junction_id` | Deterministic ID for the current input/configuration, not backward-compatible with legacy GeoPandas IDs |
 | `num_nodes` | Number of coincident endpoint nodes in the system |
 | `num_arms` | Sum of endpoint degrees; see limitations below |
 | `area_sqm` | Area of the BNG convex-hull polygon |
@@ -63,6 +63,7 @@ The named input table/view must have:
 
 ## Current limitations
 
+- `junction_id` is deterministic for the current input and configuration, but intentionally does not preserve legacy GeoPandas IDs. Rebuilding a dataset is a data-version change.
 - `num_arms` deliberately preserves the legacy endpoint-degree sum. It can over-count arms at traffic islands, dual carriageways and slip roads. A forthcoming external-link/cluster-boundary method should replace it.
 - Grade separation is not yet represented; bridges and tunnels need upstream filtering or a future level-aware policy.
 - The public first version is BNG/OS OpenRoads-specific to permit an exact, tested cutover. General CRS and input-schema mapping are planned once the contract is stable.
