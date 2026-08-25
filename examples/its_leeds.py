@@ -1,8 +1,8 @@
 """Reproducible case study: raw OSM roads and merged junctions around ITS, Leeds.
 
 Builds a 200 m buffer around the Institute for Transport Studies, downloads
-OpenStreetMap roads with QuackOSM, merges them into junction polygons with the
-`junctions` DuckDB extension, and renders a figure.
+OpenStreetMap roads with QuackOSM, clips them to the buffer, merges them into
+junction polygons with the `junctions` DuckDB extension, and renders a figure.
 
 Dependencies:
     duckdb (>= 1.5.3), quackosm, shapely, matplotlib
@@ -51,9 +51,9 @@ HIGHWAY_COLORS = {
 DEFAULT_COLOR = "#bdc3c7"
 
 
-def build_buffer(con: duckdb.DuckDBPyConnection) -> BaseGeometry:
-    """Return a 200 m circle around ITS as a WGS84 polygon."""
-    wkt = con.execute(
+def build_buffer(con: duckdb.DuckDBPyConnection) -> str:
+    """Return a 200 m circle around ITS as a WGS84 polygon WKT string."""
+    return con.execute(
         """
         SELECT ST_AsText(ST_Transform(
             ST_Buffer(
@@ -65,10 +65,9 @@ def build_buffer(con: duckdb.DuckDBPyConnection) -> BaseGeometry:
         """,
         [ITS_LON, ITS_LAT],
     ).fetchone()[0]
-    return shapely.wkt.loads(wkt)
 
 
-def extract_osm(con: duckdb.DuckDBPyConnection, buffer: BaseGeometry) -> Path:
+def extract_osm(buffer: BaseGeometry) -> Path:
     """Download highway features in the buffer with QuackOSM and return the DB path."""
     if OSM_DB.exists():
         OSM_DB.unlink()
@@ -84,17 +83,33 @@ def extract_osm(con: duckdb.DuckDBPyConnection, buffer: BaseGeometry) -> Path:
     )
 
 
-def render(con: duckdb.DuckDBPyConnection) -> None:
+def clip_roads(con: duckdb.DuckDBPyConnection, buffer_wkt: str) -> None:
+    """Clip QuackOSM ways to the buffer, dumping multi-parts into linestrings."""
     con.execute(f"ATTACH '{OSM_DB}' AS osm (READ_ONLY)")
+    con.execute("CREATE TEMP TABLE study_buffer AS SELECT ST_GeomFromText(?) AS geom", [buffer_wkt])
+    con.execute(
+        """
+        CREATE TEMP TABLE roads_clipped AS
+        SELECT
+            q.feature_id,
+            q.tags,
+            d.geom AS geometry
+        FROM osm.quackosm q, study_buffer b, UNNEST(ST_Dump(ST_Intersection(q.geometry, b.geom))) AS u(d)
+        WHERE starts_with(q.feature_id, 'way/')
+          AND q.tags['highway'] IS NOT NULL
+          AND ST_GeometryType(q.geometry) = 'LINESTRING'
+          AND ST_Intersects(q.geometry, b.geom)
+          AND ST_GeometryType(d.geom) = 'LINESTRING'
+        """
+    )
 
+
+def render(con: duckdb.DuckDBPyConnection) -> None:
     roads = con.execute(
         """
         SELECT tags['highway'] AS highway,
                ST_AsText(ST_Transform(geometry, 'EPSG:4326', 'EPSG:27700', always_xy := true)) AS wkt
-        FROM osm.quackosm
-        WHERE starts_with(feature_id, 'way/')
-          AND tags['highway'] IS NOT NULL
-          AND ST_GeometryType(geometry) = 'LINESTRING'
+        FROM roads_clipped
         """
     ).fetchall()
     roads = [(h, shapely.wkt.loads(w)) for h, w in roads]
@@ -102,7 +117,7 @@ def render(con: duckdb.DuckDBPyConnection) -> None:
     junctions = con.execute(
         """
         SELECT ST_AsText(ST_Transform(geom, 'EPSG:4326', 'EPSG:27700', always_xy := true)) AS wkt
-        FROM junctions_from_osm('osm.quackosm', output_crs := 'EPSG:4326')
+        FROM junctions_from_osm('roads_clipped', output_crs := 'EPSG:4326')
         """
     ).fetchall()
     junctions = [shapely.wkt.loads(w) for w, in junctions]
@@ -164,8 +179,9 @@ def main() -> None:
     con.execute("INSTALL spatial; LOAD spatial")
     con.execute(f"LOAD '{EXTENSION}'")
 
-    buffer = build_buffer(con)
-    extract_osm(con, buffer)
+    buffer_wkt = build_buffer(con)
+    extract_osm(shapely.wkt.loads(buffer_wkt))
+    clip_roads(con, buffer_wkt)
     render(con)
     con.close()
 

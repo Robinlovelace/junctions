@@ -115,8 +115,9 @@ FROM junctions_from_osm(
 
 1. builds a 200 m circle around the Institute for Transport Studies (53.8081° N, 1.5585° W) with DuckDB Spatial;
 2. downloads OpenStreetMap roads inside it from a Geofabrik West Yorkshire extract with QuackOSM;
-3. merges them into junction polygons with `junctions_from_osm` (the centroid is in the UK, so `analysis_crs` resolves to EPSG:27700 automatically); and
-4. renders raw roads and merged junctions to `docs/figures/its-leeds-junctions.png`.
+3. clips the roads to the circle with `ST_Intersection` so no way extends past the boundary;
+4. merges the clipped roads into junction polygons with `junctions_from_osm` (the centroid is in the UK, so `analysis_crs` resolves to EPSG:27700 automatically); and
+5. renders raw roads and merged junctions to `docs/figures/its-leeds-junctions.png`.
 
 ![Raw OSM roads and merged junctions around ITS, University of Leeds](docs/figures/its-leeds-junctions.png)
 
@@ -125,7 +126,7 @@ make release
 python examples/its_leeds.py
 ```
 
-The script needs `duckdb`, `quackosm`, `shapely`, and `matplotlib`. The extension load is the only junctions-specific step; everything else is standard QuackOSM and DuckDB Spatial:
+The script needs `duckdb`, `quackosm`, `shapely`, and `matplotlib`. The extension load and the clip are the only junctions-specific steps; everything else is standard QuackOSM and DuckDB Spatial:
 
 ```python
 import quackosm as qosm
@@ -146,9 +147,22 @@ qosm.convert_pbf_to_duckdb(
     geometry_filter=buffer_wgs84,  # the 200 m circle
 )
 
+# QuackOSM returns whole ways that intersect the circle, so clip them to it
 con.execute("ATTACH 'its_osm.duckdb' AS osm (READ_ONLY)")
+con.execute(
+    """
+    CREATE TABLE roads_clipped AS
+    SELECT q.feature_id, q.tags, d.geom AS geometry
+    FROM osm.quackosm q, study_buffer b,
+         UNNEST(ST_Dump(ST_Intersection(q.geometry, b.geom))) AS u(d)
+    WHERE starts_with(q.feature_id, 'way/')
+      AND q.tags['highway'] IS NOT NULL
+      AND ST_GeometryType(d.geom) = 'LINESTRING'
+    """
+)
+
 junctions = con.execute(
-    "SELECT * FROM junctions_from_osm('osm.quackosm')"
+    "SELECT * FROM junctions_from_osm('roads_clipped')"
 ).fetchall()
 ```
 
