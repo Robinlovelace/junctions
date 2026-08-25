@@ -78,7 +78,7 @@ ORDER BY c.junction_id
     {DEFAULT_SCHEMA,
      "junctions_from_osm",
      {"table_name", nullptr},
-     {{"analysis_crs", "'EPSG:27700'"},
+     {{"analysis_crs", "'auto'"},
       {"output_crs", "'EPSG:4326'"},
       {"motorway_buffer", "20.0"},
       {"strategic_buffer", "15.0"},
@@ -87,7 +87,7 @@ ORDER BY c.junction_id
       {"min_arms", "2"},
       {nullptr, nullptr}},
      R"(
-WITH roads AS (
+WITH source_roads AS (
     SELECT
         feature_id AS source_id,
         tags['highway'] AS highway,
@@ -97,11 +97,34 @@ WITH roads AS (
             WHEN tags['tunnel'] IS NOT NULL AND tags['tunnel'] != 'no' THEN -1
             ELSE 0
         END AS level_key,
-        ST_Transform(geometry, 'EPSG:4326', analysis_crs, always_xy := true) AS geom
+        geometry
     FROM query_table(table_name)
     WHERE starts_with(feature_id, 'way/')
       AND tags['highway'] IS NOT NULL
       AND ST_GeometryType(geometry) = 'LINESTRING'
+), extent AS (
+    SELECT ST_Extent_Agg(geometry) AS bbox
+    FROM source_roads
+), selected_crs AS (
+    SELECT CASE
+        WHEN analysis_crs != 'auto' THEN analysis_crs
+        WHEN (ST_XMin(bbox) + ST_XMax(bbox)) / 2 BETWEEN -8.75 AND 1.96
+         AND (ST_YMin(bbox) + ST_YMax(bbox)) / 2 BETWEEN 49.75 AND 60.95 THEN 'EPSG:27700'
+        ELSE concat(
+            'EPSG:',
+            (CASE WHEN (ST_YMin(bbox) + ST_YMax(bbox)) / 2 >= 0 THEN 32600 ELSE 32700 END
+             + least(60, greatest(1, floor(((ST_XMin(bbox) + ST_XMax(bbox)) / 2 + 180) / 6) + 1)))::INTEGER
+        )
+    END AS analysis_crs
+    FROM extent
+), roads AS (
+    SELECT
+        source_id,
+        highway,
+        level_key,
+        ST_Transform(geometry, 'EPSG:4326', selected_crs.analysis_crs, always_xy := true) AS geom
+    FROM source_roads
+    CROSS JOIN selected_crs
 ), noded AS (
     SELECT level_key, ST_Node(ST_Union_Agg(geom)) AS geom
     FROM roads
@@ -137,8 +160,10 @@ WITH roads AS (
     FROM nodes
     GROUP BY level_key
 ), components AS (
-    SELECT level_key, ST_ConvexHull(d.geom) AS geom_analysis
-    FROM dissolved, UNNEST(ST_Dump(geom)) AS u(d)
+    SELECT level_key, selected_crs.analysis_crs, ST_ConvexHull(d.geom) AS geom_analysis
+    FROM dissolved
+    CROSS JOIN selected_crs,
+         UNNEST(ST_Dump(geom)) AS u(d)
 ), numbered AS (
     SELECT
         row_number() OVER (
@@ -158,12 +183,13 @@ WITH roads AS (
 SELECT
     c.junction_id::VARCHAR AS junction_id,
     c.level_key,
+    c.analysis_crs,
     s.num_nodes,
     s.num_arms,
     ST_Area(c.geom_analysis) AS area_sqm,
     ST_X(ST_Centroid(c.geom_analysis)) AS centroid_x,
     ST_Y(ST_Centroid(c.geom_analysis)) AS centroid_y,
-    ST_Transform(c.geom_analysis, analysis_crs, output_crs, always_xy := true) AS geom
+    ST_Transform(c.geom_analysis, c.analysis_crs, output_crs, always_xy := true) AS geom
 FROM numbered c
 JOIN stats s USING (junction_id)
 ORDER BY c.junction_id

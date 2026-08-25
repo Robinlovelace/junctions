@@ -54,6 +54,32 @@ class JunctionsExtensionTest(unittest.TestCase):
         ).fetchall()
         self.assertEqual(result, [(0, 1, 4, 'POLYGON')])
 
+    def test_osm_adapter_selects_bng_for_a_uk_case_study(self):
+        self.con.execute(
+            """CREATE TABLE quackosm_uk(feature_id VARCHAR, tags MAP(VARCHAR, VARCHAR), geometry GEOMETRY);
+            INSERT INTO quackosm_uk VALUES
+                ('way/1', MAP {'highway': 'primary'}, ST_GeomFromText('LINESTRING (-1.5100 53.0000, -1.4900 53.0000)')),
+                ('way/2', MAP {'highway': 'residential'}, ST_GeomFromText('LINESTRING (-1.5000 52.9900, -1.5000 53.0100)'));
+            """
+        )
+        result = self.con.execute(
+            "SELECT analysis_crs, num_arms FROM junctions_from_osm('quackosm_uk')"
+        ).fetchall()
+        self.assertEqual(result, [('EPSG:27700', 4)])
+
+    def test_osm_adapter_selects_local_utm_outside_uk(self):
+        self.con.execute(
+            """CREATE TABLE quackosm_vancouver(feature_id VARCHAR, tags MAP(VARCHAR, VARCHAR), geometry GEOMETRY);
+            INSERT INTO quackosm_vancouver VALUES
+                ('way/1', MAP {'highway': 'primary'}, ST_GeomFromText('LINESTRING (-123.1100 49.2800, -123.0900 49.2800)')),
+                ('way/2', MAP {'highway': 'residential'}, ST_GeomFromText('LINESTRING (-123.1000 49.2700, -123.1000 49.2900)'));
+            """
+        )
+        result = self.con.execute(
+            "SELECT analysis_crs, num_arms FROM junctions_from_osm('quackosm_vancouver')"
+        ).fetchall()
+        self.assertEqual(result, [('EPSG:32610', 4)])
+
     def test_buffer_configuration_changes_cluster_membership(self):
         self.con.execute(
             """CREATE TABLE nearby_links(id INTEGER, road_function VARCHAR, geom_bng GEOMETRY);
